@@ -14,6 +14,17 @@ import {
   buildGeminiEnhancementPrompt,
   MAHWOUS_IDENTITY,
 } from '@/lib/mahwousCaptionEngine';
+import {
+  buildViralBlueprint,
+  blueprintToPromptFragment,
+  getStarInsight,
+  type ContentMode,
+  type ViralPlatform,
+} from '@/lib/engines/viralContentEngine';
+import {
+  getActiveTrends,
+  trendToPromptFragment,
+} from '@/lib/engines/trendAnalyzer';
 
 export const maxDuration = 45;
 export const dynamic = 'force-dynamic';
@@ -23,6 +34,50 @@ interface CaptionRequest {
   vibe: string;
   attire: string;
   productUrl: string;
+  viralMode?: ContentMode;
+  viralPlatform?: ViralPlatform;
+}
+
+// ─── In-memory cache (24h TTL) ──────────────────────────────
+// يقلل استدعاءات الـ AI للمنتجات المكررة. يتصفّر مع كل cold start.
+interface CacheEntry {
+  body: unknown;
+  expiresAt: number;
+}
+const CAPTION_CACHE = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const CACHE_MAX_ENTRIES = 200;
+
+function cacheKey(req: CaptionRequest): string {
+  const p = req.perfumeData;
+  const notes = typeof p.notes === 'string' ? p.notes : '';
+  return [
+    (p.name || '').trim().toLowerCase(),
+    (p.brand || '').trim().toLowerCase(),
+    (p.gender || '').trim().toLowerCase(),
+    notes.trim().toLowerCase().slice(0, 120),
+    (req.vibe || '').trim().toLowerCase(),
+    (req.viralMode || '').trim().toLowerCase(),
+    (req.viralPlatform || '').trim().toLowerCase(),
+  ].join('|');
+}
+
+function cacheGet(key: string): unknown | null {
+  const hit = CAPTION_CACHE.get(key);
+  if (!hit) return null;
+  if (hit.expiresAt < Date.now()) {
+    CAPTION_CACHE.delete(key);
+    return null;
+  }
+  return hit.body;
+}
+
+function cacheSet(key: string, body: unknown): void {
+  if (CAPTION_CACHE.size >= CACHE_MAX_ENTRIES) {
+    const firstKey = CAPTION_CACHE.keys().next().value;
+    if (firstKey) CAPTION_CACHE.delete(firstKey);
+  }
+  CAPTION_CACHE.set(key, { body, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
 // ═══ AI Callers ═══
@@ -118,10 +173,18 @@ function parseAIResponse(rawText: string): Record<string, string> | null {
 // ═══ Main Handler ═══
 export async function POST(request: NextRequest) {
   try {
-    const { perfumeData, vibe, attire, productUrl }: CaptionRequest = await request.json();
+    const body: CaptionRequest = await request.json();
+    const { perfumeData, vibe, attire, productUrl, viralMode, viralPlatform } = body;
 
     if (!perfumeData?.name) {
       return NextResponse.json({ error: 'perfumeData.name is required.' }, { status: 400 });
+    }
+
+    // ── Cache lookup ──
+    const ck = cacheKey(body);
+    const cached = cacheGet(ck);
+    if (cached) {
+      return NextResponse.json(cached, { status: 200, headers: { 'X-Cache': 'HIT' } });
     }
 
     // ── Step 1: تحليل العطر والجمهور المستهدف ──
@@ -158,13 +221,33 @@ export async function POST(request: NextRequest) {
 
     // ── Step 3: تحسين بالذكاء الاصطناعي ──
     const smartUrl = (productUrl && productUrl.length <= 80) ? productUrl : MAHWOUS_IDENTITY.storeUrl;
-    const enhancementPrompt = buildGeminiEnhancementPrompt(
+    let enhancementPrompt = buildGeminiEnhancementPrompt(
       perfumeData.name,
       perfumeData.brand,
       baseCaptions,
       analysis,
       smartUrl,
     );
+
+    // ── Viral augmentation (optional) ──
+    // يُحقن فقط لو طلب العميل وضع viralMode. غير ذلك لا تغيير عن السلوك السابق.
+    if (viralMode) {
+      const platform: ViralPlatform = viralPlatform ?? 'tiktok';
+      const blueprint = buildViralBlueprint(perfumeData, platform, viralMode);
+      const insight = getStarInsight(perfumeData);
+      const activeTrends = getActiveTrends(perfumeData).slice(0, 2);
+      const trendsBlock = activeTrends.map(trendToPromptFragment).join('\n\n');
+      enhancementPrompt = [
+        enhancementPrompt,
+        '',
+        '─── VIRAL AUGMENTATION (use the blueprint below to shape hooks/voice) ───',
+        blueprintToPromptFragment(blueprint),
+        '',
+        `[STAR INSIGHT — embed naturally in educational captions]`,
+        insight,
+        ...(trendsBlock ? ['', '[ACTIVE TRENDS]', trendsBlock] : []),
+      ].join('\n');
+    }
 
     let enhancedCaptions: Record<string, string> | null = null;
     let source = 'mahwous_engine_v3';
@@ -249,7 +332,7 @@ export async function POST(request: NextRequest) {
       facebook_video: merge('facebook_video'),
     };
 
-    return NextResponse.json({
+    const responseBody = {
       captions: finalCaptions,
       videoCaptions,
       hashtags: baseHashtags,
@@ -262,7 +345,11 @@ export async function POST(request: NextRequest) {
         ageRange: analysis.ageRange,
       },
       source,
-    }, { status: 200 });
+    };
+
+    cacheSet(ck, responseBody);
+
+    return NextResponse.json(responseBody, { status: 200, headers: { 'X-Cache': 'MISS' } });
 
   } catch (error: unknown) {
     console.error('[/api/captions] Unhandled error:', error);
