@@ -1,0 +1,289 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,600&family=Jost:wght@200;300;400;500;600&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Root Variables ─────────────────────────────────────────── */
+:root {
+  --gold: #C9A84C;
+  --gold-light: #E8C97E;
+  --gold-dark: #9A7A2E;
+  --gold-muted: rgba(201, 168, 76, 0.2);
+  --obsidian: #080810;
+  --obsidian-card: #0E0E1A;
+  --obsidian-light: #12121E;
+  --obsidian-border: rgba(201, 168, 76, 0.15);
+  --text-primary: #F5F0E8;
+  --text-secondary: rgba(245, 240, 232, 0.6);
+  --text-muted: rgba(245, 240, 232, 0.35);
+}
+
+/* ─── Base ────────────────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--obsidian);
+  background-image:
+    radial-gradient(ellipse at 20% 10%, rgba(201, 168, 76, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, rgba(100, 60, 180, 0.05) 0%, transparent 50%);
+  color: var(--text-primary);
+  font-family: 'Jost', system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+/* ─── Scrollbar ───────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--obsidian); }
+::-webkit-scrollbar-thumb { background: var(--gold-dark); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gold); }
+
+/* ─── Typography ──────────────────────────────────────────────── */
+.font-display { font-family: 'Cormorant Garamond', Georgia, serif; }
+.font-arabic { font-family: 'Noto Naskh Arabic', 'Arabic Typesetting', serif; direction: rtl; }
+
+/* ─── Gold Shimmer Text ───────────────────────────────────────── */
+.text-gold-shimmer {
+  background: linear-gradient(90deg, #C9A84C 0%, #E8C97E 30%, #F5E6B8 50%, #E8C97E 70%, #C9A84C 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 4s linear infinite;
+}
+
+/* ─── Glass Card ──────────────────────────────────────────────── */
+.glass-card {
+  background: rgba(14, 14, 26, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--obsidian-border);
+  border-radius: 16px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(201, 168, 76, 0.35);
+  box-shadow: 0 0 40px rgba(201, 168, 76, 0.08);
+}
+
+/* ─── Gold Divider ────────────────────────────────────────────── */
+.gold-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  opacity: 0.4;
+}
+
+/* ─── Inputs ──────────────────────────────────────────────────── */
+.luxury-input {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--obsidian-border);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-family: 'Jost', sans-serif;
+  font-size: 14px;
+  padding: 12px 16px;
+  width: 100%;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  outline: none;
+}
+
+.luxury-input::placeholder { color: var(--text-muted); }
+
+.luxury-input:focus {
+  border-color: var(--gold);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.12), 0 0 20px rgba(201, 168, 76, 0.08);
+}
+
+.luxury-input option {
+  background: #1A1A2E;
+  color: var(--text-primary);
+}
+
+/* ─── Buttons ─────────────────────────────────────────────────── */
+.btn-gold {
+  background: linear-gradient(135deg, #C9A84C 0%, #E8C97E 50%, #C9A84C 100%);
+  background-size: 200% auto;
+  color: #080810;
+  font-family: 'Jost', sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: none;
+  border-radius: 12px;
+  padding: 16px 40px;
+  cursor: pointer;
+  transition: background-position 0.4s ease, transform 0.15s ease, box-shadow 0.3s ease;
+  box-shadow: 0 4px 24px rgba(201, 168, 76, 0.35);
+}
+
+.btn-gold:hover {
+  background-position: right center;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(201, 168, 76, 0.55);
+}
+
+.btn-gold:active { transform: translateY(0); }
+
+.btn-gold:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--obsidian-border);
+  color: var(--text-secondary);
+  font-family: 'Jost', sans-serif;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.btn-ghost:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: rgba(201, 168, 76, 0.06);
+}
+
+/* ─── Drop Zone ───────────────────────────────────────────────── */
+.drop-zone {
+  border: 2px dashed var(--obsidian-border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  transition: border-color 0.3s ease, background 0.3s ease;
+  cursor: pointer;
+}
+
+.drop-zone:hover,
+.drop-zone.active {
+  border-color: var(--gold);
+  background: rgba(201, 168, 76, 0.05);
+}
+
+/* ─── Segment Toggle ──────────────────────────────────────────── */
+.segment-btn {
+  flex: 1;
+  padding: 10px 20px;
+  font-family: 'Jost', sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  border: none;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.segment-btn.active {
+  background: rgba(201, 168, 76, 0.15);
+  color: var(--gold);
+  font-weight: 500;
+}
+
+/* ─── Loading ─────────────────────────────────────────────────── */
+.loading-ring {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(201, 168, 76, 0.15);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes shimmer {
+  from { background-position: 0% center; }
+  to { background-position: 200% center; }
+}
+
+@keyframes progress-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes pulse-gold {
+  0%, 100% { box-shadow: 0 0 20px rgba(201, 168, 76, 0.2); }
+  50% { box-shadow: 0 0 50px rgba(201, 168, 76, 0.5); }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease forwards;
+}
+
+.animate-float { animation: float 5s ease-in-out infinite; }
+.animate-pulse-gold { animation: pulse-gold 2s ease-in-out infinite; }
+
+/* ─── Output Image Card ───────────────────────────────────────── */
+.output-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--obsidian-border);
+  background: var(--obsidian-card);
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.output-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(201, 168, 76, 0.5);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(201, 168, 76, 0.1);
+}
+
+.output-card .overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 50%, rgba(8, 8, 16, 0.9) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  display: flex;
+  align-items: flex-end;
+  padding: 20px;
+}
+
+.output-card:hover .overlay { opacity: 1; }
+
+/* ─── Section Labels ──────────────────────────────────────────── */
+.section-label {
+  font-family: 'Jost', sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 8px;
+}
+
+/* ─── Caption Card ────────────────────────────────────────────── */
+.caption-text {
+  font-family: 'Noto Naskh Arabic', serif;
+  direction: rtl;
+  text-align: right;
+  line-height: 1.9;
+  font-size: 15px;
+  color: var(--text-primary);
+}
