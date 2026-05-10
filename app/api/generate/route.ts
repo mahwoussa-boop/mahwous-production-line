@@ -174,15 +174,18 @@ async function generateStage1(params: {
 }): Promise<string> {
   const { body, ac } = params;
   const stage1Prompt = buildFluxPrompt({
-    name: body.perfumeData.name,
-    brand: body.perfumeData.brand,
-    gender: body.perfumeData.gender,
-    occasion: body.perfumeData.occasion,
-    season: body.perfumeData.season,
+    perfumeData: {
+      name: body.perfumeData.name,
+      brand: body.perfumeData.brand,
+      notes: body.perfumeData.notes,
+      description: body.perfumeData.description,
+    },
+    vibe: body.vibe,
+    attire: body.attire,
     aspectHint: ac.aspectHint,
-    triggerWord: MAHWOUS_TRIGGER,
+    loraTriggerWord: MAHWOUS_TRIGGER,
     bottleDescription: body.bottleDescription,
-    hasRealImage: !!body.productImageUrl,
+    hasBottleReference: !!body.productImageUrl,
   });
 
   const stage1Input: Record<string, unknown> = {
