@@ -7,12 +7,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   recordPerformance,
+  recordPerformanceAsync,
   computeViralScore,
   analyzeTopPerformers,
   buildOptimizationHint,
   getAllRecords,
+  getAllRecordsAsync,
   type PerformanceMetrics,
 } from '@/lib/engines/viralPerformanceTracker';
+import { getStorage } from '@/lib/engines/storage';
 import {
   validate,
   VIRAL_MODE_VALUES,
@@ -80,7 +83,7 @@ export async function POST(request: NextRequest) {
     const metrics = validateMetrics((raw as { metrics?: unknown }).metrics) ?? {};
     const viralScore = typeof body.viralScore === 'number' ? body.viralScore : computeViralScore(metrics);
 
-    const saved = recordPerformance({
+    const payload = {
       captionId: body.captionId,
       perfumeName: body.perfumeName,
       platform: body.platform as never,
@@ -91,9 +94,21 @@ export async function POST(request: NextRequest) {
       metrics,
       viralScore,
       generatedAt: body.generatedAt ?? new Date().toISOString(),
-    });
+    };
 
-    return NextResponse.json({ ok: true, record: saved, viralScore }, { status: 201 });
+    // Dual-write: sync (immediate read) + async storage (durable when KV configured)
+    const saved = recordPerformance(payload);
+    try {
+      await recordPerformanceAsync(payload);
+    } catch (e) {
+      console.warn('[learning/record] async storage write failed:',
+        e instanceof Error ? e.message : e);
+    }
+
+    return NextResponse.json(
+      { ok: true, record: saved, viralScore, storage: getStorage().kind },
+      { status: 201 },
+    );
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'record failed';
     return NextResponse.json({ error: msg }, { status: 500 });
@@ -107,7 +122,10 @@ export async function GET(request: NextRequest) {
     const insightsOnly = searchParams.get('mode') === 'insights';
     const limit = Math.min(Number(searchParams.get('limit') ?? '50'), 500);
 
-    const all = getAllRecords();
+    // Prefer durable storage when available; fall back to in-memory
+    let all = await getAllRecordsAsync(500).catch(() => [] as ReturnType<typeof getAllRecords>[number][]);
+    if (all.length === 0) all = [...getAllRecords()];
+
     const filtered = platform
       ? all.filter((r) => r.platform === platform)
       : all;

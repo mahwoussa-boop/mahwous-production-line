@@ -165,6 +165,41 @@ export interface OptimizationHint {
   rationale: string;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Async API — مدعومة بـ StorageAdapter (Memory افتراضياً، KV لو متاح)
+// تبقى الـ sync API أعلاه للـ backward compat.
+// ─────────────────────────────────────────────────────────────
+
+const STORAGE_LIST_KEY = 'mahwous:viral:performance';
+const STORAGE_MAX = 5000;
+
+import { getStorage } from './storage';
+
+export async function recordPerformanceAsync(
+  rec: Omit<PerformanceRecord, 'recordedAt'>,
+): Promise<PerformanceRecord> {
+  const full: PerformanceRecord = { ...rec, recordedAt: new Date().toISOString() };
+  await getStorage().push(STORAGE_LIST_KEY, full, STORAGE_MAX);
+  return full;
+}
+
+export async function getAllRecordsAsync(limit = STORAGE_MAX): Promise<PerformanceRecord[]> {
+  return getStorage().range<PerformanceRecord>(STORAGE_LIST_KEY, limit);
+}
+
+export async function analyzeTopPerformersAsync(limit = 30): Promise<PatternInsight> {
+  const records = await getAllRecordsAsync(limit);
+  return analyzeTopPerformers(records, limit);
+}
+
+export async function buildOptimizationHintAsync(
+  platform: ViralPlatform,
+  limit = STORAGE_MAX,
+): Promise<OptimizationHint> {
+  const records = await getAllRecordsAsync(limit);
+  return buildOptimizationHint(platform, records);
+}
+
 export function buildOptimizationHint(
   platform: ViralPlatform,
   records: readonly PerformanceRecord[] = STORE,
