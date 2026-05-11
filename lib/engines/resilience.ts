@@ -195,3 +195,77 @@ export function getCircuitState(key: string): CircuitState {
 export function resetCircuit(key: string): void {
   CIRCUITS.delete(key);
 }
+
+// ─────────────────────────────────────────────────────────────
+// Resilient Fetch — fetch + timeout + retry على transient errors
+// يحتفظ بنفس signature الـ fetch القياسي
+// ─────────────────────────────────────────────────────────────
+
+export interface ResilientFetchOptions extends RequestInit {
+  timeoutMs?: number;
+  retry?: RetryOptions;
+}
+
+export class HttpError extends Error {
+  constructor(public readonly status: number, public readonly body: string) {
+    super(`HTTP ${status}: ${body.slice(0, 200)}`);
+    this.name = 'HttpError';
+  }
+}
+
+/**
+ * يلف fetch بـ AbortSignal للـ timeout + retry على 429/5xx/network.
+ * يرمي HttpError للحالات غير القابلة لإعادة المحاولة (4xx غير 408/425/429).
+ */
+export async function resilientFetch(
+  input: string | URL,
+  options: ResilientFetchOptions = {},
+): Promise<Response> {
+  const { timeoutMs = 30_000, retry, ...init } = options;
+
+  return retryWithBackoff(
+    async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const userSignal = init.signal;
+        if (userSignal) {
+          userSignal.addEventListener('abort', () => controller.abort(), { once: true });
+        }
+        const res = await fetch(input, { ...init, signal: controller.signal });
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          const err = new HttpError(res.status, body);
+          if (res.status === 408 || res.status === 425 || res.status === 429 || res.status >= 500) {
+            throw err;
+          }
+          // 4xx non-retryable
+          throw Object.assign(err, { __noRetry: true });
+        }
+        return res;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    {
+      maxAttempts: retry?.maxAttempts ?? 4,
+      baseDelayMs: retry?.baseDelayMs ?? 600,
+      maxDelayMs: retry?.maxDelayMs ?? 8000,
+      factor: retry?.factor ?? 2,
+      jitter: retry?.jitter ?? 0.3,
+      onRetry: retry?.onRetry,
+      shouldRetry: retry?.shouldRetry ?? ((err) => {
+        if ((err as { __noRetry?: boolean }).__noRetry) return false;
+        return isTransientError(err);
+      }),
+    },
+  );
+}
+
+export async function resilientJsonFetch<T = unknown>(
+  input: string | URL,
+  options: ResilientFetchOptions = {},
+): Promise<T> {
+  const res = await resilientFetch(input, options);
+  return res.json() as Promise<T>;
+}
