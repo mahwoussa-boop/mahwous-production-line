@@ -25,6 +25,7 @@ import {
   getActiveTrends,
   trendToPromptFragment,
 } from '@/lib/engines/trendAnalyzer';
+import { validateCaptionRequest, formatIssues } from '@/lib/engines/validate';
 
 export const maxDuration = 45;
 export const dynamic = 'force-dynamic';
@@ -174,6 +175,15 @@ function parseAIResponse(rawText: string): Record<string, string> | null {
 export async function POST(request: NextRequest) {
   try {
     const body: CaptionRequest = await request.json();
+
+    const v = validateCaptionRequest(body);
+    if (!v.ok) {
+      return NextResponse.json(
+        { error: 'Invalid request', issues: v.issues, summary: formatIssues(v.issues) },
+        { status: 400 },
+      );
+    }
+
     const { perfumeData, vibe, attire, productUrl, viralMode, viralPlatform } = body;
 
     if (!perfumeData?.name) {
