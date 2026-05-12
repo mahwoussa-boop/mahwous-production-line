@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server';
 import { generateSpeech, getUsageInfo, estimateAudioCost, VOICE_PRESETS } from '@/lib/engines/elevenLabsClient';
 import type { AudioConfig } from '@/lib/pipeline/pipelineTypes';
+import { retryWithBackoff, withCircuit, isTransientError } from '@/lib/engines/resilience';
 
 export async function POST(request: Request) {
   try {
@@ -43,7 +44,12 @@ export async function POST(request: Request) {
       voiceId: config?.voiceId,
     };
 
-    const audio = await generateSpeech(text, audioConfig, aspectRatio);
+    const audio = await withCircuit('elevenlabs-tts', () =>
+      retryWithBackoff(
+        () => generateSpeech(text, audioConfig, aspectRatio),
+        { maxAttempts: 3, baseDelayMs: 700, perAttemptTimeoutMs: 25_000, shouldRetry: isTransientError },
+      ),
+    );
 
     return NextResponse.json({
       success: true,

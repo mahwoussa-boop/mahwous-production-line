@@ -12,11 +12,23 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { retryWithBackoff, withCircuit, isTransientError } from '@/lib/engines/resilience';
 
 export const maxDuration = 30;
 export const dynamic = 'force-dynamic';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+function resilientAnalyze<T>(fn: () => Promise<T>): Promise<T> {
+  return withCircuit('claude-vision', () =>
+    retryWithBackoff(fn, {
+      maxAttempts: 2,
+      baseDelayMs: 700,
+      perAttemptTimeoutMs: 22_000,
+      shouldRetry: isTransientError,
+    }),
+  );
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -35,7 +47,7 @@ export async function POST(request: NextRequest) {
       | 'image/webp'
       | 'image/gif';
 
-    const response = await anthropic.messages.create({
+    const response = await resilientAnalyze(() => anthropic.messages.create({
       model: 'claude-opus-4-5',
       max_tokens: 500,
       messages: [
@@ -66,7 +78,7 @@ Do NOT include brand opinions or marketing language.`,
           ],
         },
       ],
-    });
+    }));
 
     const description =
       response.content[0].type === 'text' ? response.content[0].text.trim() : '';
