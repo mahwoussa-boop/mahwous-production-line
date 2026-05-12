@@ -26,6 +26,19 @@ import {
   trendToPromptFragment,
 } from '@/lib/engines/trendAnalyzer';
 import { validateCaptionRequest, formatIssues } from '@/lib/engines/validate';
+import { retryWithBackoff, withCircuit, isTransientError } from '@/lib/engines/resilience';
+
+// ─── AI caller resilience ──────────────────────────────────
+function wrapAI<T>(key: string, fn: () => Promise<T>, timeoutMs = 20_000): Promise<T> {
+  return withCircuit(key, () =>
+    retryWithBackoff(fn, {
+      maxAttempts: 2,
+      baseDelayMs: 600,
+      perAttemptTimeoutMs: timeoutMs,
+      shouldRetry: isTransientError,
+    }),
+  );
+}
 
 export const maxDuration = 45;
 export const dynamic = 'force-dynamic';
@@ -265,7 +278,7 @@ export async function POST(request: NextRequest) {
     // Try Gemini first (best for Arabic content)
     if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
       try {
-        const rawText = await callGemini(enhancementPrompt);
+        const rawText = await wrapAI('gemini-captions', () => callGemini(enhancementPrompt));
         enhancedCaptions = parseAIResponse(rawText);
         if (enhancedCaptions) {
           source = 'mahwous_engine_v3+gemini';
@@ -279,7 +292,7 @@ export async function POST(request: NextRequest) {
     // Try OpenAI as fallback
     if (!enhancedCaptions && process.env.OPENAI_API_KEY) {
       try {
-        const rawText = await callOpenAI(enhancementPrompt);
+        const rawText = await wrapAI('openai-captions', () => callOpenAI(enhancementPrompt));
         enhancedCaptions = parseAIResponse(rawText);
         if (enhancedCaptions) {
           source = 'mahwous_engine_v3+openai';
@@ -293,7 +306,7 @@ export async function POST(request: NextRequest) {
     // Try Claude as last fallback
     if (!enhancedCaptions && process.env.ANTHROPIC_API_KEY) {
       try {
-        const rawText = await callClaude(enhancementPrompt);
+        const rawText = await wrapAI('claude-captions', () => callClaude(enhancementPrompt));
         enhancedCaptions = parseAIResponse(rawText);
         if (enhancedCaptions) {
           source = 'mahwous_engine_v3+claude';

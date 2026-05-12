@@ -27,6 +27,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildFluxPrompt, buildNegativePrompt } from '@/lib/promptEngine';
 import type { GenerationRequest } from '@/lib/types';
+import { retryWithBackoff, withCircuit, isTransientError } from '@/lib/engines/resilience';
 
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
@@ -36,7 +37,31 @@ const MAHWOUS_LORA_URL =
   'https://v3b.fal.media/files/b/0a90eba7/OiQI7NS6N3neTl50fJHcC_pytorch_lora_weights.safetensors';
 const MAHWOUS_TRIGGER = 'MAHWOUS_MAN';
 
-const FAL_KEY_ENV = () => process.env.FAL_KEY ?? '';
+/** Trim/BOM-safe — avoids silent empty auth when .env.local has stray whitespace */
+function normalizeFalKey(): string {
+  const v = process.env.FAL_KEY;
+  if (v == null || v === '') return '';
+  return v.replace(/^\uFEFF/, '').replace(/\\n/g, '').trim();
+}
+const FAL_KEY_ENV = () => normalizeFalKey();
+
+function userFacingFalFailure(messages: string[]): string {
+  const text = messages.filter(Boolean).join(' | ');
+  if (/exhausted balance|User is locked/i.test(text)) {
+    return 'رصيد حساب fal.ai منتهٍ والحساب موقوف مؤقتاً. أعد الشحن من https://fal.ai/dashboard/billing ثم أعد المحاولة.';
+  }
+  if (/401|Unauthorized|invalid api key|invalid.*credentials/i.test(text)) {
+    return 'مفتاح FAL_KEY غير مقبول. أنشئ مفتاحاً من https://fal.ai/dashboard/keys وأعد تشغيل الخادم بعد تحديث .env.local.';
+  }
+  if (/fal\.ai submit error 403|403:/i.test(text) && /detail/i.test(text)) {
+    return 'طلب fal.ai مرفوض (403). تحقق من صلاحيات المفتاح أو رصيد الفوترة في لوحة fal.ai.';
+  }
+  const first = messages.find((m) => m && m.trim().length > 0);
+  if (first && first.length <= 500) {
+    return `فشل توليد الصور: ${first}`;
+  }
+  return 'فشل توليد الصور. راجع تفاصيل الخطأ في استجابة الخادم (حقل details) أو سجلات الطرفية.';
+}
 const FAL_QUEUE_BASE = 'https://queue.fal.run';
 const FAL_MODEL_T2I = 'fal-ai/flux-lora';
 const FAL_MODEL_KONTEXT = 'fal-ai/flux-kontext-lora';
@@ -112,22 +137,39 @@ async function fetchImageAsBase64(imageUrl: string): Promise<string | null> {
 // FAL Queue Helpers
 // ═══════════════════════════════════════════════════════════════════════════════
 async function falSubmit(model: string, input: Record<string, unknown>): Promise<string> {
-  const res = await fetch(`${FAL_QUEUE_BASE}/${model}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Key ${FAL_KEY_ENV()}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ input }),
-  });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`fal.ai submit error ${res.status}: ${errText}`);
-  }
-  const data = await res.json();
-  const requestId = data?.request_id as string | undefined;
-  if (!requestId) throw new Error('fal.ai did not return a request_id');
-  return requestId;
+  // محمي بـ retry+circuit للأخطاء العابرة (429/5xx/timeout)
+  return withCircuit(`fal:${model}`, () =>
+    retryWithBackoff(
+      async () => {
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 20_000);
+        try {
+          const res = await fetch(`${FAL_QUEUE_BASE}/${model}`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Key ${FAL_KEY_ENV()}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ input }),
+            signal: controller.signal,
+          });
+          if (!res.ok) {
+            const errText = await res.text();
+            const err = new Error(`fal.ai submit error ${res.status}: ${errText}`);
+            (err as Error & { status?: number }).status = res.status;
+            throw err;
+          }
+          const data = await res.json();
+          const requestId = data?.request_id as string | undefined;
+          if (!requestId) throw new Error('fal.ai did not return a request_id');
+          return requestId;
+        } finally {
+          clearTimeout(t);
+        }
+      },
+      { maxAttempts: 3, baseDelayMs: 800, shouldRetry: isTransientError },
+    ),
+  );
 }
 
 async function falPoll(model: string, requestId: string, timeoutMs = 240000): Promise<Record<string, unknown>> {
@@ -302,6 +344,7 @@ async function generateFormat(
   url: string | null;
   status: string;
   pipeline: string;
+  errorMessage?: string;
 }> {
   try {
     // Stage 1: Generate character
@@ -380,6 +423,7 @@ async function generateFormat(
     };
   } catch (err) {
     console.error(`[pipeline-v14] FAILED (${ac.format}):`, err);
+    const errorMessage = err instanceof Error ? err.message : String(err);
     return {
       format: ac.format,
       label: ac.label,
@@ -388,6 +432,7 @@ async function generateFormat(
       url: null,
       status: 'FAILED',
       pipeline: 'failed',
+      errorMessage,
     };
   }
 }
@@ -453,10 +498,9 @@ export async function POST(request: NextRequest) {
     );
     const completedImages = results.filter((r) => r.status === 'COMPLETED' && r.url);
     if (completedImages.length === 0) {
-      return NextResponse.json(
-        { error: 'فشل توليد الصور. يرجى التحقق من FAL_KEY والمحاولة مرة أخرى.' },
-        { status: 500 }
-      );
+      const rawMessages = [...new Set(results.map((r) => r.errorMessage).filter((m): m is string => !!m))];
+      const error = userFacingFalFailure(rawMessages.length ? rawMessages : ['لم يُرجع fal.ai أي صورة ناجحة.']);
+      return NextResponse.json({ error, details: rawMessages[0]?.slice(0, 800) }, { status: 500 });
     }
     console.log(`[generate] Completed: ${completedImages.length}/3 images`);
     completedImages.forEach((img) => {
