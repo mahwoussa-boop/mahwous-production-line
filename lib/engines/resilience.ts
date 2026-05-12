@@ -196,6 +196,25 @@ export function resetCircuit(key: string): void {
   CIRCUITS.delete(key);
 }
 
+export interface CircuitSnapshot {
+  key: string;
+  state: CircuitState;
+  failures: number;
+  openedAt: number;
+  openedSecondsAgo: number | null;
+}
+
+export function listCircuits(): CircuitSnapshot[] {
+  const now = Date.now();
+  return Array.from(CIRCUITS.entries()).map(([key, d]) => ({
+    key,
+    state: d.state,
+    failures: d.failures,
+    openedAt: d.openedAt,
+    openedSecondsAgo: d.openedAt ? Math.round((now - d.openedAt) / 1000) : null,
+  }));
+}
+
 // ─────────────────────────────────────────────────────────────
 // Resilient Fetch — fetch + timeout + retry على transient errors
 // يحتفظ بنفس signature الـ fetch القياسي
