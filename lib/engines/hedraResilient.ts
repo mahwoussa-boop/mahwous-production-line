@@ -14,9 +14,6 @@ import {
   createHedraVideoWithAssets,
   getHedraVideoStatus,
   getHedraAsset,
-  type HedraGenerationResponse,
-  type HedraAsset,
-  type VideoAspectRatio,
 } from '../hedraClient';
 import {
   retryWithBackoff,
@@ -50,27 +47,17 @@ function resilient<TArgs extends unknown[], TResult>(
 }
 
 export const hedraResilient = {
-  uploadImage: resilient<[string], string>(uploadImageToHedra),
-  generateAudio: resilient<[string], string>(generateSharedAudio),
-  createVideo: resilient<
-    [{
-      imageUrl: string; voiceoverText: string; aspectRatio: VideoAspectRatio; voiceId?: string;
-    }],
-    HedraGenerationResponse
-  >(createHedraVideo),
-  createVideoWithAssets: resilient<
-    [{
-      imageAssetId: string; audioAssetId: string; voiceoverText: string; aspectRatio: VideoAspectRatio;
-    }],
-    HedraGenerationResponse
-  >(createHedraVideoWithAssets),
+  uploadImage: resilient(uploadImageToHedra),
+  generateAudio: resilient(generateSharedAudio),
+  createVideo: resilient(createHedraVideo),
+  createVideoWithAssets: resilient(createHedraVideoWithAssets),
   /** Status polling — retries أقل لأنه سريع ومتكرر */
-  getStatus: resilient<[string], HedraGenerationResponse>(getHedraVideoStatus, {
+  getStatus: resilient(getHedraVideoStatus, {
     ...DEFAULT_RETRY,
     maxAttempts: 2,
     perAttemptTimeoutMs: 15_000,
   }),
-  getAsset: resilient<[string], HedraAsset>(getHedraAsset),
+  getAsset: resilient(getHedraAsset),
 };
 
 export { CIRCUIT_KEY as HEDRA_CIRCUIT_KEY };
