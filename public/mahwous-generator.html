@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>مولّد صور مهووس - Gemini AI</title>
+<style>
+  * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Arial; }
+  body { margin: 0; padding: 20px; background: linear-gradient(135deg, #1a1a2e, #16213e); color: #fff; min-height: 100vh; }
+  .container { max-width: 1100px; margin: 0 auto; }
+  h1 { text-align: center; background: linear-gradient(90deg, #ffd700, #ff8c00); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 2.2em; }
+  .card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,215,0,0.3); border-radius: 16px; padding: 24px; margin-bottom: 20px; backdrop-filter: blur(10px); }
+  label { display: block; margin-bottom: 8px; color: #ffd700; font-weight: bold; }
+  input[type="text"], input[type="password"], textarea, select { width: 100%; padding: 12px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,215,0,0.3); border-radius: 8px; color: #fff; font-size: 15px; margin-bottom: 16px; }
+  textarea { min-height: 100px; resize: vertical; font-family: inherit; }
+  button { background: linear-gradient(135deg, #ffd700, #ff8c00); color: #000; border: none; padding: 14px 28px; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer; transition: transform 0.2s; }
+  button:hover { transform: scale(1.03); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .preview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
+  .preview-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 2px solid rgba(255,215,0,0.4); }
+  .results { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 20px; }
+  .result-item { background: rgba(0,0,0,0.4); border-radius: 12px; padding: 12px; }
+  .result-item img { width: 100%; border-radius: 8px; }
+  .result-item a { display: block; text-align: center; margin-top: 8px; color: #ffd700; text-decoration: none; }
+  .preset-btn { background: rgba(255,215,0,0.15); color: #ffd700; border: 1px solid rgba(255,215,0,0.4); padding: 8px 14px; margin: 4px; border-radius: 20px; font-size: 13px; cursor: pointer; display: inline-block; }
+  .preset-btn:hover { background: rgba(255,215,0,0.3); }
+  .status { padding: 12px; border-radius: 8px; margin: 10px 0; }
+  .status.success { background: rgba(0,200,0,0.2); border: 1px solid #0c0; }
+  .status.error { background: rgba(255,0,0,0.2); border: 1px solid #f00; }
+  .status.loading { background: rgba(0,150,255,0.2); border: 1px solid #09f; }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; vertical-align: middle; margin-left: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎨 مولّد صور مهووس بالذكاء الاصطناعي</h1>
+  <p style="text-align:center; opacity:0.8;">باستخدام Google Gemini 2.5 Flash Image (Nano Banana)</p>
+
+  <div class="card">
+    <label>🔑 مفتاح Gemini API</label>
+    <input type="password" id="apiKey" placeholder="AIzaSy..." value="">
+    <small style="opacity:0.7;">يُحفظ في متصفحك فقط — لا يُرسل لأي مكان غير Google.</small>
+  </div>
+
+  <div class="card">
+    <label>📸 ارفع صور مهووس المرجعية (1-4 صور)</label>
+    <input type="file" id="refImages" accept="image/*" multiple>
+    <div class="preview-grid" id="previewGrid"></div>
+  </div>
+
+  <div class="card">
+    <label>✨ برومبتات جاهزة (اضغط للإضافة)</label>
+    <div id="presets"></div>
+  </div>
+
+  <div class="card">
+    <label>📝 وصف الصورة المطلوبة (بالإنجليزي يعطي نتائج أفضل)</label>
+    <textarea id="prompt" placeholder="Generate the same 3D cartoon character 'Mahwous' (man with black beard, hoodie) holding a luxury perfume bottle in a modern perfume store with golden shelves, cinematic lighting"></textarea>
+    <label>🔢 عدد الصور</label>
+    <select id="count">
+      <option value="1">1</option>
+      <option value="2">2</option>
+      <option value="4" selected>4</option>
+      <option value="6">6</option>
+    </select>
+    <button id="generateBtn" onclick="generate()">🚀 توليد الصور</button>
+  </div>
+
+  <div id="status"></div>
+  <div class="results" id="results"></div>
+</div>
+
+<script>
+const PRESETS = [
+  { ar: "متجر عطور فاخر", en: "in a luxury perfume boutique with golden glass shelves, holding an elegant perfume bottle, cinematic warm lighting" },
+  { ar: "في الصحراء وقت الغروب", en: "in the Arabian desert at sunset, golden sand dunes, holding a sandy-colored perfume bottle, magical light" },
+  { ar: "مكتب فخم", en: "in a luxurious modern office, wearing a black suit, holding a premium perfume, warm ambient lighting" },
+  { ar: "سوق العطور الشعبي", en: "in a traditional Arabian souq, incense smoke, oud burning, holding an antique perfume bottle" },
+  { ar: "شاطئ ليلي", en: "on a tropical beach at night, full moon, holding a fresh blue perfume bottle, palm trees" },
+  { ar: "حفلة فاخرة", en: "at an elegant gala party, chandelier, gold confetti, holding a celebratory perfume" },
+  { ar: "مختبر العطور", en: "in a perfumer's laboratory with glass beakers and ingredients, holding a freshly crafted perfume" },
+  { ar: "حدائق فرساي", en: "in the gardens of Versailles, rose petals flying, holding a floral pink perfume" },
+  { ar: "نيويورك ليلاً", en: "on a New York rooftop at night, city skyline, holding a modern dark perfume bottle" },
+  { ar: "جبال جليدية", en: "in snowy mountains, ice and frost, holding an icy blue cologne, breath visible" },
+];
+
+const presetsDiv = document.getElementById('presets');
+PRESETS.forEach(p => {
+  const b = document.createElement('span');
+  b.className = 'preset-btn';
+  b.textContent = p.ar;
+  b.onclick = () => {
+    const base = "Generate the same 3D cartoon character 'Mahwous' (man with black beard, exactly as shown in the reference images) ";
+    document.getElementById('prompt').value = base + p.en + ", high quality 3D render, Pixar style";
+  };
+  presetsDiv.appendChild(b);
+});
+
+let referenceImages = [];
+document.getElementById('refImages').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files).slice(0, 4);
+  referenceImages = [];
+  const grid = document.getElementById('previewGrid');
+  grid.innerHTML = '';
+  for (const f of files) {
+    const b64 = await fileToBase64(f);
+    referenceImages.push({ mime: f.type, data: b64 });
+    const img = document.createElement('img');
+    img.src = `data:${f.type};base64,${b64}`;
+    grid.appendChild(img);
+  }
+});
+
+function fileToBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+function setStatus(html, type='loading') {
+  document.getElementById('status').innerHTML = `<div class="status ${type}">${html}</div>`;
+}
+
+async function generate() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const prompt = document.getElementById('prompt').value.trim();
+  const count = parseInt(document.getElementById('count').value);
+
+  if (!apiKey) return setStatus('❌ أدخل مفتاح API', 'error');
+  if (!prompt) return setStatus('❌ اكتب وصف الصورة', 'error');
+  if (referenceImages.length === 0) return setStatus('❌ ارفع صورة مرجعية واحدة على الأقل', 'error');
+
+  document.getElementById('generateBtn').disabled = true;
+  document.getElementById('results').innerHTML = '';
+  setStatus(`🎨 يتم توليد ${count} صورة... <span class="spinner"></span>`, 'loading');
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`;
+
+  const parts = [{ text: prompt }];
+  referenceImages.forEach(img => {
+    parts.push({ inline_data: { mime_type: img.mime, data: img.data } });
+  });
+
+  let done = 0;
+  for (let i = 0; i < count; i++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: { responseModalities: ["IMAGE"] }
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(JSON.stringify(data));
+
+      const imagePart = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData || p.inline_data);
+      if (!imagePart) throw new Error('لم يُرجع Gemini صورة. الرد: ' + JSON.stringify(data).slice(0,300));
+
+      const inlineData = imagePart.inlineData || imagePart.inline_data;
+      const src = `data:${inlineData.mimeType || inlineData.mime_type};base64,${inlineData.data}`;
+      const item = document.createElement('div');
+      item.className = 'result-item';
+      item.innerHTML = `<img src="${src}"><a href="${src}" download="mahwous_${Date.now()}_${i}.png">⬇️ تنزيل</a>`;
+      document.getElementById('results').appendChild(item);
+      done++;
+      setStatus(`✅ تم توليد ${done}/${count} <span class="spinner"></span>`, 'loading');
+    } catch (err) {
+      console.error(err);
+      setStatus(`⚠️ خطأ في صورة ${i+1}: ${err.message}`, 'error');
+    }
+  }
+
+  setStatus(`✅ انتهى — تم توليد ${done} صورة بنجاح`, 'success');
+  document.getElementById('generateBtn').disabled = false;
+}
+</script>
+</body>
+</html>
