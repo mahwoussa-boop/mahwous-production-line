@@ -6,9 +6,40 @@ import { NextRequest, NextResponse } from 'next/server';
 import { generateVeoVideo, enhancePromptWithGemini, VEO_MODELS } from '@/lib/veoClient';
 import { generateVideoContents } from '@/lib/mahwousVideoEngine';
 import type { PerfumeData } from '@/lib/types';
+import {
+  retryWithBackoff,
+  withCircuit,
+  isTransientError,
+} from '@/lib/engines/resilience';
+import { validate, PERFUME_DATA_SCHEMA, formatIssues } from '@/lib/engines/validate';
 
 export const maxDuration = 120;
 export const dynamic = 'force-dynamic';
+
+// ─── Resilience wrappers ─────────────────────────────────────
+// Gemini prompt enhancement: شبكة + rate limits محتملة → retry
+async function resilientEnhance(
+  voiceText: string, videoPrompt: string, name: string, brand: string,
+  bottleDesc?: string, bottleLora?: string,
+): Promise<string> {
+  return withCircuit('gemini-enhance', () =>
+    retryWithBackoff(
+      () => enhancePromptWithGemini(voiceText, videoPrompt, name, brand, bottleDesc, bottleLora),
+      { maxAttempts: 3, baseDelayMs: 700, perAttemptTimeoutMs: 25_000, shouldRetry: isTransientError },
+    ),
+  );
+}
+
+async function resilientVeoLaunch(
+  params: Parameters<typeof generateVeoVideo>[0],
+): Promise<Awaited<ReturnType<typeof generateVeoVideo>>> {
+  return withCircuit('veo3', () =>
+    retryWithBackoff(
+      () => generateVeoVideo(params),
+      { maxAttempts: 3, baseDelayMs: 1200, perAttemptTimeoutMs: 30_000, shouldRetry: isTransientError },
+    ),
+  );
+}
 
 interface VideoGenerationRequest {
   perfumeData: PerfumeData;
@@ -31,6 +62,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields: perfumeData' }, { status: 400 });
     }
 
+    const v = validate(perfumeData, PERFUME_DATA_SCHEMA);
+    if (!v.ok) {
+      return NextResponse.json(
+        { error: 'Invalid perfumeData', issues: v.issues, summary: formatIssues(v.issues) },
+        { status: 400 },
+      );
+    }
+
     if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
       return NextResponse.json({ error: 'GOOGLE_GENERATIVE_AI_API_KEY is not configured.' }, { status: 500 });
     }
@@ -45,29 +84,23 @@ export async function POST(request: NextRequest) {
     const bottleDesc = bottleAnalysis?.description;
     const bottleLoraAddition = bottleAnalysis?.loraPromptAddition;
     const [verticalPrompt, horizontalPrompt] = await Promise.all([
-      enhancePromptWithGemini(
-        vertical.voiceoverText,
-        vertical.videoPrompt,
-        perfumeData.name,
-        perfumeData.brand || 'مهووس',
-        bottleDesc,
-        bottleLoraAddition,
+      resilientEnhance(
+        vertical.voiceoverText, vertical.videoPrompt,
+        perfumeData.name, perfumeData.brand || 'مهووس',
+        bottleDesc, bottleLoraAddition,
       ),
-      enhancePromptWithGemini(
-        horizontal.voiceoverText,
-        horizontal.videoPrompt,
-        perfumeData.name,
-        perfumeData.brand || 'مهووس',
-        bottleDesc,
-        bottleLoraAddition,
+      resilientEnhance(
+        horizontal.voiceoverText, horizontal.videoPrompt,
+        perfumeData.name, perfumeData.brand || 'مهووس',
+        bottleDesc, bottleLoraAddition,
       ),
     ]);
 
     // Step 3: Launch Veo 3 operations in parallel
     console.log('[generate-video] Launching Veo 3 Fast operations...');
     const [verticalResult, horizontalResult] = await Promise.allSettled([
-      generateVeoVideo({ prompt: verticalPrompt, imageUrl: imageUrl || undefined, aspectRatio: '9:16', durationSeconds: 6, model: VEO_MODELS.VEO_3_FAST }),
-      generateVeoVideo({ prompt: horizontalPrompt, imageUrl: landscapeImageUrl || imageUrl || undefined, aspectRatio: '16:9', durationSeconds: 6, model: VEO_MODELS.VEO_3_FAST }),
+      resilientVeoLaunch({ prompt: verticalPrompt, imageUrl: imageUrl || undefined, aspectRatio: '9:16', durationSeconds: 6, model: VEO_MODELS.VEO_3_FAST }),
+      resilientVeoLaunch({ prompt: horizontalPrompt, imageUrl: landscapeImageUrl || imageUrl || undefined, aspectRatio: '16:9', durationSeconds: 6, model: VEO_MODELS.VEO_3_FAST }),
     ]);
 
     // Step 4: Build response
