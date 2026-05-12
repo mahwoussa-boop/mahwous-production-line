@@ -4,9 +4,23 @@
 // ══════════════════════════════════════════════════════════════════════════════
 import { NextRequest, NextResponse } from 'next/server';
 import { pollVeoOperation } from '@/lib/veoClient';
+import { retryWithBackoff, isTransientError, TimeoutError } from '@/lib/engines/resilience';
 
 export const maxDuration = 30;
 export const dynamic = 'force-dynamic';
+
+// Poll مع retry قصير — لا circuit هنا لأن polling متكرر بطبيعته
+async function resilientPoll(opName: string) {
+  return retryWithBackoff(
+    () => pollVeoOperation(opName),
+    {
+      maxAttempts: 2,
+      baseDelayMs: 500,
+      perAttemptTimeoutMs: 12_000,
+      shouldRetry: (err) => err instanceof TimeoutError || isTransientError(err),
+    },
+  );
+}
 
 interface PollVideoRequest {
   videos: Array<{
@@ -39,7 +53,7 @@ export async function POST(request: NextRequest) {
         }
 
         try {
-          const result = await pollVeoOperation(opName);
+          const result = await resilientPoll(opName);
 
           if (result.status === 'done' && result.videoUrl) {
             return {
