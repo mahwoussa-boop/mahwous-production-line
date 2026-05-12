@@ -45,8 +45,11 @@ export async function POST(request: NextRequest) {
     // Check status of each pending image
     const results = await Promise.all(
       pendingImages.map(async (img) => {
-        const statusUrl = `${FAL_BASE}/${img.model}/requests/${img.requestId}/status`;
-        const resultUrl = `${FAL_BASE}/${img.model}/requests/${img.requestId}`;
+        // Strip sub-paths (e.g. flux-lora/image-to-image → flux-lora) — sub-path
+        // models route status/result via the parent path; using the sub-path 422s.
+        const baseModel = (img.model as string).split('/').slice(0, 2).join('/');
+        const statusUrl = `${FAL_BASE}/${baseModel}/requests/${img.requestId}/status`;
+        const resultUrl = `${FAL_BASE}/${baseModel}/requests/${img.requestId}`;
 
         try {
           const statusRes = await fetch(statusUrl, {

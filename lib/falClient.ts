@@ -74,10 +74,14 @@ function getAuthHeader(): string {
 }
 
 // ─── Step 1: Submit to fal.ai queue ──────────────────────────────────────────
+// fal.ai's queue API returns status_url and response_url in the submit response.
+// We MUST use those URLs — sub-path models like `flux-lora/image-to-image` route
+// status/result via the parent model path (`flux-lora`), so constructing the
+// result URL from the sub-path yields HTTP 422.
 async function submitToQueue(
   input: Record<string, unknown>,
   useImg2Img = false,
-): Promise<string> {
+): Promise<{ statusUrl: string; responseUrl: string }> {
   const model = useImg2Img ? FAL_MODEL_IMG2IMG : FAL_MODEL;
   const res = await fetch(`${FAL_BASE}/${model}`, {
     method: 'POST',
@@ -96,18 +100,26 @@ async function submitToQueue(
   const data = await res.json();
   const requestId = data?.request_id as string | undefined;
   if (!requestId) throw new Error('fal.ai did not return a request_id');
-  return requestId;
+
+  // Prefer URLs returned by fal.ai. Fallback strips the sub-path so flux-lora/image-to-image
+  // status/result requests go to the parent flux-lora path.
+  const baseModel = model.split('/').slice(0, 2).join('/');
+  const statusUrl =
+    (data?.status_url as string | undefined) ??
+    `${FAL_BASE}/${baseModel}/requests/${requestId}/status`;
+  const responseUrl =
+    (data?.response_url as string | undefined) ??
+    `${FAL_BASE}/${baseModel}/requests/${requestId}`;
+
+  return { statusUrl, responseUrl };
 }
 
-// ─── Step 2: Poll until done ──────────────────────────────────────────────────
+// ─── Step 2: Poll until done ──────────────────────────────────────────
 async function pollUntilDone(
-  requestId: string,
+  statusUrl: string,
+  responseUrl: string,
   timeoutMs = 110_000,
-  useImg2Img = false,
 ): Promise<string> {
-  const model = useImg2Img ? FAL_MODEL_IMG2IMG : FAL_MODEL;
-  const statusUrl = `${FAL_BASE}/${model}/requests/${requestId}/status`;
-  const resultUrl = `${FAL_BASE}/${model}/requests/${requestId}`;
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
@@ -124,11 +136,12 @@ async function pollUntilDone(
 
     if (queueStatus === 'COMPLETED') {
       // Fetch the actual result
-      const resultRes = await fetch(resultUrl, {
+      const resultRes = await fetch(responseUrl, {
         headers: { Authorization: getAuthHeader() },
       });
       if (!resultRes.ok) {
-        throw new Error(`fal.ai result fetch error ${resultRes.status}`);
+        const errText = await resultRes.text().catch(() => '');
+        throw new Error(`fal.ai result fetch error ${resultRes.status}: ${errText}`);
       }
       const result = await resultRes.json();
 
@@ -182,8 +195,8 @@ async function generateSingleFormat(
     input.strength = 0.35; // Low strength: keep character but guide bottle shape
   }
 
-  const requestId = await submitToQueue(input, hasBottleImage);
-  const imageUrl = await pollUntilDone(requestId, 110_000, hasBottleImage);
+  const { statusUrl, responseUrl } = await submitToQueue(input, hasBottleImage);
+  const imageUrl = await pollUntilDone(statusUrl, responseUrl, 110_000);
 
   return {
     format: ac.format,

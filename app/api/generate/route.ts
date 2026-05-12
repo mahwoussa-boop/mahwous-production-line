@@ -172,20 +172,30 @@ async function falSubmit(model: string, input: Record<string, unknown>): Promise
   );
 }
 
+// fal.ai sub-path models (e.g. flux-lora/image-to-image) route status/result via
+// the parent model path. Using the sub-path on status/requests yields HTTP 422.
+function falQueueBaseModel(model: string): string {
+  return model.split('/').slice(0, 2).join('/');
+}
+
 async function falPoll(model: string, requestId: string, timeoutMs = 240000): Promise<Record<string, unknown>> {
   const start = Date.now();
+  const baseModel = falQueueBaseModel(model);
   while (Date.now() - start < timeoutMs) {
     await new Promise((r) => setTimeout(r, 3000));
-    const res = await fetch(`${FAL_QUEUE_BASE}/${model}/requests/${requestId}/status`, {
+    const res = await fetch(`${FAL_QUEUE_BASE}/${baseModel}/requests/${requestId}/status`, {
       headers: { Authorization: `Key ${FAL_KEY_ENV()}` },
     });
     if (!res.ok) continue;
     const status = await res.json();
     if (status?.status === 'COMPLETED') {
-      const resultRes = await fetch(`${FAL_QUEUE_BASE}/${model}/requests/${requestId}`, {
+      const resultRes = await fetch(`${FAL_QUEUE_BASE}/${baseModel}/requests/${requestId}`, {
         headers: { Authorization: `Key ${FAL_KEY_ENV()}` },
       });
-      if (!resultRes.ok) throw new Error(`fal.ai result fetch error ${resultRes.status}`);
+      if (!resultRes.ok) {
+        const errText = await resultRes.text().catch(() => '');
+        throw new Error(`fal.ai result fetch error ${resultRes.status}: ${errText}`);
+      }
       return await resultRes.json();
     }
     if (status?.status === 'FAILED') {
