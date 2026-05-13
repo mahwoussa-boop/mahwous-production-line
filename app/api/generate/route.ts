@@ -157,7 +157,7 @@ async function falSubmit(model: string, input: Record<string, unknown>): Promise
               Authorization: `Key ${FAL_KEY_ENV()}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ input }),
+            body: JSON.stringify(input),
             signal: controller.signal,
           });
           if (!res.ok) {
