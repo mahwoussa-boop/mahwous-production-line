@@ -391,7 +391,9 @@ async function generateFormat(
           pipeline: 'smart_composite_v14_pixel_perfect',
         };
       } catch (stage2Err) {
-        console.warn(`[stage-2] ${ac.format}: Compositing FAILED, using Stage 1 image:`, stage2Err);
+        const errMsg = stage2Err instanceof Error ? stage2Err.message : String(stage2Err);
+        console.error(`[stage-2] ${ac.format}: ❌ COMPOSITE FAILED — bottle will be AI-hallucinated. Reason:`, errMsg);
+        console.error(`[stage-2] ${ac.format}: productImageUrl was: ${body.productImageUrl?.substring(0, 120)}`);
         return {
           format: ac.format,
           label: ac.label,
