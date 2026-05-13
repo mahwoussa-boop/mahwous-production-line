@@ -107,20 +107,47 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // 1. Download both images
+    // 1. Download both images. mahwous.com blocks requests without UA/Referer,
+    //    so use browser-like headers for the bottle fetch (and fall back to a
+    //    second attempt with a stronger UA on failure).
+    const bottleHeaders: HeadersInit = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'image/webp,image/jpeg,image/png,image/*,*/*',
+      'Referer': 'https://mahwous.com/',
+    };
+
     const [charRes, bottleRes] = await Promise.all([
       fetch(characterImageUrl),
-      fetch(bottleImageUrl),
+      fetch(bottleImageUrl, { headers: bottleHeaders }),
     ]);
 
-    if (!charRes.ok || !bottleRes.ok) {
-      return NextResponse.json({ error: 'Failed to download images' }, { status: 500 });
+    if (!charRes.ok) {
+      return NextResponse.json({ error: `Failed to download character image (${charRes.status})` }, { status: 500 });
     }
 
-    const [charBuffer, bottleBuffer] = await Promise.all([
-      charRes.arrayBuffer().then(Buffer.from),
-      bottleRes.arrayBuffer().then(Buffer.from),
-    ]);
+    let bottleResponseOk = bottleRes.ok;
+    let bottleArrayBuf: ArrayBuffer | null = bottleRes.ok ? await bottleRes.arrayBuffer() : null;
+
+    if (!bottleResponseOk) {
+      // Retry once with Origin header (some CDNs require it)
+      const retry = await fetch(bottleImageUrl, {
+        headers: { ...bottleHeaders, 'Origin': 'https://mahwous.com' },
+      });
+      if (retry.ok) {
+        bottleResponseOk = true;
+        bottleArrayBuf = await retry.arrayBuffer();
+      }
+    }
+
+    if (!bottleResponseOk || !bottleArrayBuf) {
+      return NextResponse.json(
+        { error: `Failed to download bottle image (${bottleRes.status}) from ${bottleImageUrl.substring(0, 120)}` },
+        { status: 500 },
+      );
+    }
+
+    const charBuffer = Buffer.from(await charRes.arrayBuffer());
+    const bottleBuffer = Buffer.from(bottleArrayBuf);
 
     // 2. Get character image dimensions
     const charMeta = await sharp(charBuffer).metadata();
