@@ -377,44 +377,19 @@ async function generateFormat(
           productImageUrl: body.productImageUrl.trim(),
           format: ac.format,
         });
-        console.log(`[pipeline-v14] ${ac.format}: Stage 2 (composite) done`);
-
-        // Stage 3: Kontext Lighting Fix
-        try {
-          const lightingPrompt = buildKontextLightingPrompt({
-            name: body.perfumeData.name,
-            brand: body.perfumeData.brand,
-            bottleDescription: body.bottleDescription,
-          });
-          const finalUrl = await generateStage3Lighting({
-            compositedImageUrl: compositedUrl,
-            kontextPrompt: lightingPrompt,
-            loraPath: MAHWOUS_LORA_URL,
-            imageSize: ac.imageSize,
-            format: ac.format,
-          });
-          console.log(`[pipeline-v14] ${ac.format}: Stage 3 (lighting) done`);
-          return {
-            format: ac.format,
-            label: ac.label,
-            dimensions: ac.dimensions,
-            aspectRatio: ac.aspectRatio,
-            url: finalUrl,
-            status: 'COMPLETED',
-            pipeline: 'smart_composite_v14_full',
-          };
-        } catch (stage3Err) {
-          console.warn(`[stage-3] ${ac.format}: Lighting fix FAILED, using composited image:`, stage3Err);
-          return {
-            format: ac.format,
-            label: ac.label,
-            dimensions: ac.dimensions,
-            aspectRatio: ac.aspectRatio,
-            url: compositedUrl,
-            status: 'COMPLETED',
-            pipeline: 'smart_composite_v14_no_lighting',
-          };
-        }
+        console.log(`[pipeline-v14] ${ac.format}: Stage 2 (composite) done — skipping Stage 3 to preserve real bottle pixels`);
+        // Stage 3 (Kontext lighting) is intentionally skipped: any AI pass
+        // hallucinates the bottle label/shape. The composited image preserves
+        // the real product photo pixel-perfectly, which is the user requirement.
+        return {
+          format: ac.format,
+          label: ac.label,
+          dimensions: ac.dimensions,
+          aspectRatio: ac.aspectRatio,
+          url: compositedUrl,
+          status: 'COMPLETED',
+          pipeline: 'smart_composite_v14_pixel_perfect',
+        };
       } catch (stage2Err) {
         console.warn(`[stage-2] ${ac.format}: Compositing FAILED, using Stage 1 image:`, stage2Err);
         return {
