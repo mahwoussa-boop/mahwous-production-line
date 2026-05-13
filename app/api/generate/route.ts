@@ -41,7 +41,14 @@ const MAHWOUS_TRIGGER = 'MAHWOUS_MAN';
 function normalizeFalKey(): string {
   const v = process.env.FAL_KEY;
   if (v == null || v === '') return '';
-  return v.replace(/^\uFEFF/, '').replace(/\\n/g, '').trim();
+  // Strip BOM, smart quotes, newlines, and any non-ASCII characters
+  return v
+    .replace(/^\uFEFF/, '')
+    .replace(/\\n/g, '')
+    .replace(/[\u2018\u2019\u201C\u201D\u00AB\u00BB]/g, '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[^\x20-\x7E]/g, '')
+    .trim();
 }
 const FAL_KEY_ENV = () => normalizeFalKey();
 
