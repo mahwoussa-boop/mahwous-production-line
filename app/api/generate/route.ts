@@ -287,6 +287,7 @@ async function generateStage2Composite(params: {
     body: JSON.stringify({
       characterImageUrl: stage1ImageUrl,
       bottleImageUrl: productImageUrl,
+      format,
     }),
   });
 

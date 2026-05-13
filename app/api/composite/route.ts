@@ -98,11 +98,37 @@ export async function POST(req: NextRequest) {
       .jpeg({ quality: 95 })
       .toBuffer();
 
-    // 6. Return the composited image as base64
-    const base64 = composited.toString('base64');
-    const dataUrl = `data:image/jpeg;base64,${base64}`;
+    // 6. Upload composited image to fal.ai storage and return a public URL
+    const falKey = (process.env.FAL_KEY || '')
+      .replace(/^﻿/, '')
+      .replace(/\\n/g, '')
+      .replace(/[‘’“”«»]/g, '')
+      // eslint-disable-next-line no-control-regex
+      .replace(/[^\x20-\x7E]/g, '')
+      .trim();
 
-    return NextResponse.json({ imageDataUrl: dataUrl });
+    if (!falKey) {
+      return NextResponse.json({ error: 'FAL_KEY is not configured' }, { status: 500 });
+    }
+
+    const formData = new FormData();
+    const blob = new Blob([new Uint8Array(composited)], { type: 'image/jpeg' });
+    formData.append('file', blob, `composite-${Date.now()}.jpg`);
+    const uploadRes = await fetch('https://rest.fal.run/storage/upload', {
+      method: 'POST',
+      headers: { Authorization: `Key ${falKey}` },
+      body: formData,
+    });
+    if (!uploadRes.ok) {
+      const errText = await uploadRes.text();
+      return NextResponse.json({ error: `fal upload failed ${uploadRes.status}: ${errText}` }, { status: 500 });
+    }
+    const uploadData = await uploadRes.json();
+    const url = uploadData?.url as string | undefined;
+    if (!url) {
+      return NextResponse.json({ error: 'fal upload did not return a URL' }, { status: 500 });
+    }
+    return NextResponse.json({ url });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[composite] Error:', message);
