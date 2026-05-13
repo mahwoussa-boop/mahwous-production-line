@@ -25,7 +25,7 @@ export const dynamic = 'force-dynamic';
 
 // ── LoRA constants ────────────────────────────────────────────────────────────
 const MAHWOUS_LORA_URL =
-  'https://v3b.fal.media/files/b/0a90eba7/OiQI7NS6N3neTl50fJHcC_pytorch_lora_weights.safetensors';
+  'https://v3b.fal.media/files/b/0a9a0a1a/9ij1vR3hMFlZIt44Ct8OY_pytorch_lora_weights.safetensors';
 const MAHWOUS_TRIGGER = 'MAHWOUS_MAN';
 
 // ── Request type ──────────────────────────────────────────────────────────────
